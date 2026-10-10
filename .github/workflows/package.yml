@@ -51,6 +51,15 @@ jobs:
       - name: Setup MSVC developer environment
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Ensure MSVC link.exe is used
+        shell: pwsh
+        run: |
+          $cleanPath = ($env:PATH -split ';') | Where-Object { $_ -notmatch 'Git[\\/]usr[\\/]bin' }
+          $cleanPathStr = $cleanPath -join ';'
+          "PATH=$cleanPathStr" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $msvcLink = Get-Command link.exe | Select-Object -ExpandProperty Source
+          Write-Host "Active linker: $msvcLink"
+
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
@@ -61,7 +70,7 @@ jobs:
         run: node scripts/prepare-pdfium.mjs
 
       - name: Build Tauri App (Windows)
-        shell: bash
+        shell: pwsh
         env:
           NODE_OPTIONS: --max-old-space-size=6144
         run: pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
