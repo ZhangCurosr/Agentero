@@ -159,18 +159,28 @@ export const GraphCanvas = memo(function GraphCanvas({
 
 			const isConnected =
 				hovered && (s.id === hovered.id || target.id === hovered.id);
+			const isCitation = link.kind === "citation";
 
-			let strokeColor = isDark
-				? "rgba(255, 255, 255, 0.18)"
-				: "rgba(0, 0, 0, 0.16)";
-			let lineWidth = (1.0 * appearance.linkThickness) / zoom;
+			let strokeColor = isCitation
+				? isDark
+					? "rgba(129, 140, 248, 0.45)"
+					: "rgba(79, 70, 229, 0.4)"
+				: isDark
+					? "rgba(255, 255, 255, 0.18)"
+					: "rgba(0, 0, 0, 0.16)";
+			let lineWidth =
+				((isCitation ? 1.2 : 1.0) * appearance.linkThickness) / zoom;
 
 			if (hovered) {
 				if (isConnected) {
-					strokeColor = isDark
-						? "rgba(255, 255, 255, 0.75)"
-						: "rgba(0, 0, 0, 0.75)";
-					lineWidth = (1.8 * appearance.linkThickness) / zoom;
+					strokeColor = isCitation
+						? isDark
+							? "rgba(165, 180, 252, 0.95)"
+							: "rgba(67, 56, 202, 0.95)"
+						: isDark
+							? "rgba(255, 255, 255, 0.75)"
+							: "rgba(0, 0, 0, 0.75)";
+					lineWidth = (2.0 * appearance.linkThickness) / zoom;
 				} else {
 					strokeColor = isDark
 						? "rgba(255, 255, 255, 0.04)"
@@ -185,8 +195,8 @@ export const GraphCanvas = memo(function GraphCanvas({
 			ctx.lineWidth = lineWidth;
 			ctx.stroke();
 
-			// Directional Arrowheads
-			if (appearance.showArrows && !(!isConnected && hovered)) {
+			// Directional Arrowheads (always show on citations or when arrows enabled)
+			if ((appearance.showArrows || isCitation) && !(!isConnected && hovered)) {
 				const dx = target.x - s.x;
 				const dy = target.y - s.y;
 				const dist = Math.hypot(dx, dy);
@@ -195,7 +205,7 @@ export const GraphCanvas = memo(function GraphCanvas({
 					const arrowDist = target.radius + 3;
 					const tipX = target.x - (dx / dist) * arrowDist;
 					const tipY = target.y - (dy / dist) * arrowDist;
-					const arrowLen = 5 / zoom;
+					const arrowLen = 5.5 / zoom;
 
 					ctx.beginPath();
 					ctx.moveTo(tipX, tipY);
@@ -510,9 +520,27 @@ export const GraphCanvas = memo(function GraphCanvas({
 							{hoveredNode.path}
 						</span>
 					) : null}
+					{hoveredNode.kind === "paper" &&
+					(hoveredNode.authors?.length || hoveredNode.year) ? (
+						<div className="flex flex-col text-[10px] text-muted-foreground/90">
+							{hoveredNode.authors?.length ? (
+								<span className="truncate">
+									{hoveredNode.authors.slice(0, 3).join(", ")}
+									{hoveredNode.authors.length > 3 ? " et al." : ""}
+								</span>
+							) : null}
+							{hoveredNode.year ? <span>{hoveredNode.year}</span> : null}
+						</div>
+					) : null}
 					<div className="flex items-center gap-2 pt-0.5 text-[11px] text-muted-foreground">
 						<span>
 							{hoveredNode.degree} {t("graph:connections", "connections")}
+							{hoveredNode.kind === "paper" && hoveredNode.inDegree > 0 ? (
+								<span className="ml-1 text-primary">
+									({hoveredNode.inDegree}{" "}
+									{t("graph:citationsInVault", "citations")})
+								</span>
+							) : null}
 						</span>
 						{hoveredNode.kind !== "tag" ? (
 							<span className="text-primary text-[10px]">

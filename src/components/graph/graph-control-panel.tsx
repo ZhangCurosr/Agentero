@@ -249,6 +249,42 @@ export const GraphControlPanel = memo(function GraphControlPanel({
 
 								<div className="flex items-center justify-between">
 									<span className="text-muted-foreground">
+										{t("graph:papers", "Papers")}
+									</span>
+									<Switch
+										checked={settings.filters.showPapers}
+										onCheckedChange={(checked) =>
+											updateFilters({ showPapers: checked })
+										}
+									/>
+								</div>
+
+								<div className="flex items-center justify-between">
+									<span className="text-muted-foreground">
+										{t("graph:citations", "Citations")}
+									</span>
+									<Switch
+										checked={settings.filters.showCitations}
+										onCheckedChange={(checked) =>
+											updateFilters({ showCitations: checked })
+										}
+									/>
+								</div>
+
+								<div className="flex items-center justify-between">
+									<span className="text-muted-foreground">
+										{t("graph:papersOnly", "Papers only")}
+									</span>
+									<Switch
+										checked={settings.filters.papersOnly}
+										onCheckedChange={(checked) =>
+											updateFilters({ papersOnly: checked })
+										}
+									/>
+								</div>
+
+								<div className="flex items-center justify-between">
+									<span className="text-muted-foreground">
 										{t("graph:existingOnly", "Existing files only")}
 									</span>
 									<Switch

@@ -96,6 +96,13 @@ export async function buildKnowledgeGraph({
 			: normalizeKey(abs);
 		if (rel) paperDirSet.add(rel);
 	}
+	// Also ensure all papers from library store are included
+	if (paperMetaByRelPath) {
+		for (const rel of paperMetaByRelPath.keys()) {
+			const norm = normalizeKey(rel);
+			if (norm) paperDirSet.add(norm);
+		}
+	}
 
 	// 1. Add Paper Nodes (folded paper directories)
 	for (const rel of paperDirSet) {
@@ -118,6 +125,12 @@ export async function buildKnowledgeGraph({
 			inDegree: 0,
 			outDegree: 0,
 			tags: [...tags],
+			authors: meta?.authors,
+			year: meta?.year,
+			publication: meta?.publication,
+			citationCount: meta?.citation_count,
+			doi: meta?.doi,
+			arxivId: meta?.arxiv_id,
 			x: (Math.random() - 0.5) * 400,
 			y: (Math.random() - 0.5) * 400,
 			vx: 0,
@@ -201,12 +214,17 @@ export async function buildKnowledgeGraph({
 				// Resolve target node:
 				// First check exact match or suffix match among existing nodes
 				let resolvedTargetId: string | null = null;
-				for (const [nId] of nodes) {
+				const lowerTarget = targetRaw.toLowerCase();
+				for (const [nId, node] of nodes) {
 					if (nId === targetRaw || nId.endsWith(`/${targetRaw}`)) {
 						resolvedTargetId = nId;
 						break;
 					}
-					if (stemOf(nId).toLowerCase() === targetRaw.toLowerCase()) {
+					if (stemOf(nId).toLowerCase() === lowerTarget) {
+						resolvedTargetId = nId;
+						break;
+					}
+					if (node.label.toLowerCase() === lowerTarget) {
 						resolvedTargetId = nId;
 						break;
 					}
@@ -218,6 +236,7 @@ export async function buildKnowledgeGraph({
 							id: `${sourceId}->${resolvedTargetId}`,
 							source: sourceId,
 							target: resolvedTargetId,
+							kind: "wikilink",
 						});
 					}
 				} else {
@@ -249,6 +268,7 @@ export async function buildKnowledgeGraph({
 						id: `${sourceId}->${stubId}`,
 						source: sourceId,
 						target: stubId,
+						kind: "wikilink",
 					});
 				}
 			}
@@ -257,7 +277,69 @@ export async function buildKnowledgeGraph({
 
 	await readBatch(vaultMdFiles);
 
-	// 4. Create Tag Nodes and links from nodes to tags
+	// 4. Extract Academic Citation links between papers from {paper}/source/agentero-cite.json
+	await Promise.all(
+		[...paperDirSet].map(async (paperRel) => {
+			try {
+				const citeSidecarPath = `${paperRel}/source/agentero-cite.json`;
+				const content = await readVaultFile(citeSidecarPath);
+				const sidecar = JSON.parse(content);
+				if (!Array.isArray(sidecar?.citations)) return;
+
+				for (const cit of sidecar.citations) {
+					let targetPaperId: string | null = null;
+					// A. Direct local match from Agentero citation parser
+					if (cit.localMatch?.paperPath) {
+						const norm = normalizeKey(cit.localMatch.paperPath);
+						if (nodes.has(norm)) {
+							targetPaperId = norm;
+						}
+					}
+
+					// B. Fallback match by DOI / arXiv ID / title
+					if (!targetPaperId) {
+						const doi = cit.metadata?.doi?.toLowerCase()?.trim();
+						const arxiv = cit.metadata?.arxivId?.toLowerCase()?.trim();
+						const citTitle = cit.metadata?.title?.toLowerCase()?.trim();
+
+						for (const [otherId, otherNode] of nodes) {
+							if (otherId === paperRel || otherNode.kind !== "paper") continue;
+							if (doi && otherNode.doi?.toLowerCase()?.trim() === doi) {
+								targetPaperId = otherId;
+								break;
+							}
+							if (arxiv && otherNode.arxivId?.toLowerCase()?.trim() === arxiv) {
+								targetPaperId = otherId;
+								break;
+							}
+							if (
+								citTitle &&
+								citTitle.length > 8 &&
+								otherNode.label.toLowerCase().trim() === citTitle
+							) {
+								targetPaperId = otherId;
+								break;
+							}
+						}
+					}
+
+					if (targetPaperId && targetPaperId !== paperRel) {
+						const linkId = `cite:${paperRel}->${targetPaperId}`;
+						links.push({
+							id: linkId,
+							source: paperRel,
+							target: targetPaperId,
+							kind: "citation",
+						});
+					}
+				}
+			} catch {
+				// Sidecar not found or unparseable, skip quietly
+			}
+		}),
+	);
+
+	// 5. Create Tag Nodes and links from nodes to tags
 	const allTags = new Set<string>();
 	for (const tagSet of tagsByNode.values()) {
 		for (const t of tagSet) allTags.add(t);
@@ -304,6 +386,8 @@ export function filterAndColorGraph(
 
 	// 1. Initial filter by kind and search query
 	for (const [id, node] of raw.nodes) {
+		if (filters.papersOnly && node.kind !== "paper") continue;
+		if (!filters.showPapers && node.kind === "paper") continue;
 		if (!filters.showTags && node.kind === "tag") continue;
 		if (!filters.showAttachments && node.kind === "attachment") continue;
 		if (filters.existingOnly && node.kind === "stub") continue;
@@ -313,7 +397,9 @@ export function filterAndColorGraph(
 			const pathMatch = node.path?.toLowerCase().includes(query) ?? false;
 			const tagMatch =
 				node.tags?.some((t) => t.toLowerCase().includes(query)) ?? false;
-			if (!labelMatch && !pathMatch && !tagMatch) {
+			const authorMatch =
+				node.authors?.some((a) => a.toLowerCase().includes(query)) ?? false;
+			if (!labelMatch && !pathMatch && !tagMatch && !authorMatch) {
 				continue;
 			}
 		}
@@ -324,6 +410,7 @@ export function filterAndColorGraph(
 	// 2. Filter links where both source and target exist
 	const filteredLinks: GraphLink[] = [];
 	for (const link of raw.links) {
+		if (!filters.showCitations && link.kind === "citation") continue;
 		const s = filteredNodes.get(link.source);
 		const t = filteredNodes.get(link.target);
 		if (s && t) {
@@ -404,9 +491,10 @@ export function filterAndColorGraph(
 
 		node.color = assignedColor;
 		const baseRadius =
-			node.kind === "paper" ? 5.5 : node.kind === "note" ? 4.5 : 3.5;
+			node.kind === "paper" ? 6.0 : node.kind === "note" ? 4.5 : 3.5;
+		const inDegreeBonus = node.kind === "paper" ? node.inDegree * 1.5 : 0;
 		node.radius =
-			(baseRadius + Math.sqrt(Math.max(0, node.degree)) * 1.4) *
+			(baseRadius + Math.sqrt(Math.max(0, node.degree + inDegreeBonus)) * 1.4) *
 			nodeSizeMultiplier;
 
 		resultNodes.push(node);

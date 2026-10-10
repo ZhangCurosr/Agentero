@@ -9,6 +9,13 @@ export type GraphNode = {
 	inDegree: number;
 	outDegree: number;
 	tags?: string[];
+	// Paper specific metadata
+	authors?: string[];
+	year?: number | null;
+	publication?: string | null;
+	citationCount?: number | null;
+	doi?: string | null;
+	arxivId?: string | null;
 	// Physics simulation state
 	x: number;
 	y: number;
@@ -20,10 +27,13 @@ export type GraphNode = {
 	color?: string;
 };
 
+export type GraphLinkKind = "wikilink" | "citation";
+
 export type GraphLink = {
 	id: string;
 	source: string;
 	target: string;
+	kind?: GraphLinkKind;
 	sourceNode?: GraphNode;
 	targetNode?: GraphNode;
 };
@@ -32,6 +42,9 @@ export type GraphFilterSettings = {
 	searchQuery: string;
 	showTags: boolean;
 	showAttachments: boolean;
+	showPapers: boolean;
+	showCitations: boolean;
+	papersOnly: boolean;
 	existingOnly: boolean;
 	showOrphans: boolean;
 };

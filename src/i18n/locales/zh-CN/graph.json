@@ -4,6 +4,9 @@
 	"searchFiles": "搜索文件...",
 	"tags": "标签",
 	"attachments": "附件",
+	"papers": "文献",
+	"citations": "文献引用",
+	"papersOnly": "仅显示文献",
 	"existingOnly": "仅显示已创建的笔记",
 	"orphans": "孤立文件",
 	"colorGroups": "颜色组",
@@ -25,5 +28,8 @@
 	"connections": "个关联",
 	"nodes": "个节点",
 	"links": "条关联",
-	"indexing": "正在索引图谱..."
+	"indexing": "正在索引图谱...",
+	"authors": "作者",
+	"year": "年份",
+	"citationsInVault": "库内被引"
 }

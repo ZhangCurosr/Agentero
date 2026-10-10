@@ -4,6 +4,9 @@
 	"searchFiles": "Search files...",
 	"tags": "Tags",
 	"attachments": "Attachments",
+	"papers": "Papers",
+	"citations": "Citations",
+	"papersOnly": "Papers only",
 	"existingOnly": "Existing files only",
 	"orphans": "Orphan files",
 	"colorGroups": "Color groups",
@@ -25,5 +28,8 @@
 	"connections": "connections",
 	"nodes": "nodes",
 	"links": "links",
-	"indexing": "Indexing graph..."
+	"indexing": "Indexing graph...",
+	"authors": "Authors",
+	"year": "Year",
+	"citationsInVault": "Vault citations"
 }
