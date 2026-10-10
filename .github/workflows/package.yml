@@ -69,11 +69,15 @@ jobs:
       - name: Stage PDFium
         run: node scripts/prepare-pdfium.mjs
 
+      - name: Disable updater signing requirement
+        run: |
+          node -e "const fs = require('fs'); const file = 'src-tauri/tauri.conf.json'; const conf = JSON.parse(fs.readFileSync(file)); if (conf.bundle) { conf.bundle.createUpdaterArtifacts = false; } fs.writeFileSync(file, JSON.stringify(conf, null, 2));"
+
       - name: Build Tauri App (Windows)
         shell: pwsh
         env:
           NODE_OPTIONS: --max-old-space-size=6144
-        run: pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        run: pnpm tauri build
 
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
@@ -128,11 +132,14 @@ jobs:
       - name: Stage PDFium
         run: node scripts/prepare-pdfium.mjs
 
+      - name: Disable updater signing requirement
+        run: |
+          node -e "const fs = require('fs'); const file = 'src-tauri/tauri.conf.json'; const conf = JSON.parse(fs.readFileSync(file)); if (conf.bundle) { conf.bundle.createUpdaterArtifacts = false; } fs.writeFileSync(file, JSON.stringify(conf, null, 2));"
+
       - name: Build Tauri App (macOS)
-        shell: bash
         env:
           NODE_OPTIONS: --max-old-space-size=6144
-        run: pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        run: pnpm tauri build
 
       - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4
@@ -195,11 +202,14 @@ jobs:
       - name: Stage PDFium
         run: node scripts/prepare-pdfium.mjs
 
+      - name: Disable updater signing requirement
+        run: |
+          node -e "const fs = require('fs'); const file = 'src-tauri/tauri.conf.json'; const conf = JSON.parse(fs.readFileSync(file)); if (conf.bundle) { conf.bundle.createUpdaterArtifacts = false; } fs.writeFileSync(file, JSON.stringify(conf, null, 2));"
+
       - name: Build Tauri App (Linux)
-        shell: bash
         env:
           NODE_OPTIONS: --max-old-space-size=6144
-        run: pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        run: pnpm tauri build
 
       - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
