@@ -169,3 +169,54 @@ export function isLayoutApiKeyMask(key: string): boolean {
 		t.split("").every((c) => c === "*" || c === "\n" || c === "\r" || c === " ")
 	);
 }
+
+/**
+ * Parse tokens from raw text or CSV file content.
+ * Supports:
+ * 1. CSV with header (e.g. `api_key`, `token`, `key`) like mineru_accounts.csv
+ * 2. Plain text / delimiter separated lists (newlines, commas, semicolons) with `#` comments
+ */
+export function parseTokensFromTextOrCsv(content: string): string[] {
+	const lines = content
+		.split(/[\r\n]+/)
+		.map((l) => l.trim())
+		.filter((l) => l.length > 0 && !l.startsWith("#"));
+	if (lines.length === 0) return [];
+
+	const firstLine = lines[0];
+	if (firstLine.includes(",")) {
+		const headers = firstLine
+			.split(",")
+			.map((h) => h.trim().toLowerCase().replace(/['"]/g, ""));
+		const keyColIndex = headers.findIndex(
+			(h) => h === "api_key" || h === "token" || h === "apikey" || h === "key",
+		);
+		if (keyColIndex !== -1) {
+			const tokens: string[] = [];
+			for (let i = 1; i < lines.length; i++) {
+				const cols = lines[i]
+					.split(",")
+					.map((c) => c.trim().replace(/^["']|["']$/g, ""));
+				const val = cols[keyColIndex];
+				if (val && !val.split("").every((c) => c === "*")) {
+					tokens.push(val);
+				}
+			}
+			if (tokens.length > 0) return tokens;
+		}
+	}
+
+	const tokens: string[] = [];
+	for (const line of lines) {
+		const parts = line
+			.split(/[,;]+/)
+			.map((s) => s.trim().replace(/#.*/, "").trim())
+			.filter(Boolean);
+		for (const p of parts) {
+			if (!p.split("").every((c) => c === "*")) {
+				tokens.push(p);
+			}
+		}
+	}
+	return tokens;
+}

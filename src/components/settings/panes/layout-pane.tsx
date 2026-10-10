@@ -1,4 +1,10 @@
-import { ChevronRight, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
+import {
+	ChevronRight,
+	ExternalLink,
+	RefreshCw,
+	Trash2,
+	Upload,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -72,6 +78,7 @@ import {
 } from "@/lib/pdf/layout/providers";
 import {
 	DEFAULT_MINERU_LANGUAGE,
+	isLayoutApiKeyMask,
 	isLayoutBackend,
 	isParserBackend,
 	LAYOUT_PROVIDER_DEFAULT_BASE_URLS,
@@ -81,6 +88,7 @@ import {
 	MINERU_LANGUAGES,
 	PARSER_BACKENDS,
 	PROVIDER_MODEL_PRESETS,
+	parseTokensFromTextOrCsv,
 } from "@/lib/pdf/layout/settings";
 import type { AppSettings } from "@/lib/settings";
 import type { ProbeStatus } from "@/lib/ui/probe-status";
@@ -557,6 +565,41 @@ function ProviderConfigCard({
 		};
 	}, []);
 
+	const fileInputRef = useRef<HTMLInputElement>(null);
+
+	const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0];
+		if (!file) return;
+		const reader = new FileReader();
+		reader.onload = (event) => {
+			const content = event.target?.result as string;
+			if (!content) return;
+			const parsed = parseTokensFromTextOrCsv(content);
+			if (parsed.length > 0) {
+				const isMasked = isLayoutApiKeyMask(displayApiKey);
+				const existing =
+					!isMasked && displayApiKey.trim()
+						? displayApiKey
+								.split(/[\n\r,;]+/)
+								.map((s) => s.trim().replace(/#.*/, "").trim())
+								.filter(Boolean)
+						: [];
+				const merged = Array.from(new Set([...existing, ...parsed]));
+				setDraft((prev) => ({ ...prev, apiKey: merged.join("\n") }));
+				notifySuccess(
+					t("layout.providerConfig.importedSuccess", {
+						count: parsed.length,
+						total: merged.length,
+					}),
+				);
+			} else {
+				notifyError(t("layout.providerConfig.importedNone"));
+			}
+		};
+		reader.readAsText(file);
+		e.target.value = "";
+	};
+
 	const mineruKeyCount = useMemo(() => {
 		if (provider.id !== "mineru" || !displayApiKey.trim()) return 0;
 		return displayApiKey
@@ -658,21 +701,40 @@ function ProviderConfigCard({
 										setDraft((prev) => ({ ...prev, apiKey: next }));
 									}}
 								/>
-								{mineruKeyCount > 0 && (
-									<div className="flex items-center justify-between text-[11px] text-muted-foreground">
-										<Badge
-											variant="secondary"
-											className="h-4.5 px-1.5 text-[10px] font-normal"
-										>
-											{t("layout.providerConfig.tokenPoolCount", {
-												count: mineruKeyCount,
-											})}
-										</Badge>
-										<span className="text-[10px]">
+								<div className="flex items-center justify-between gap-1 text-[11px] text-muted-foreground">
+									<div className="flex items-center gap-1.5 min-w-0 truncate">
+										{mineruKeyCount > 0 ? (
+											<Badge
+												variant="secondary"
+												className="h-4.5 px-1.5 text-[10px] font-normal shrink-0"
+											>
+												{t("layout.providerConfig.tokenPoolCount", {
+													count: mineruKeyCount,
+												})}
+											</Badge>
+										) : null}
+										<span className="text-[10px] truncate">
 											{t("layout.providerConfig.tokenPoolHint")}
 										</span>
 									</div>
-								)}
+									<Button
+										type="button"
+										variant="ghost"
+										size="xs"
+										className="h-5 shrink-0 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+										onClick={() => fileInputRef.current?.click()}
+									>
+										<Upload data-icon="inline-start" className="size-3 mr-1" />
+										{t("layout.providerConfig.importFile")}
+									</Button>
+									<input
+										ref={fileInputRef}
+										type="file"
+										accept=".txt,.csv"
+										className="hidden"
+										onChange={handleFileImport}
+									/>
+								</div>
 							</div>
 						) : (
 							<Input

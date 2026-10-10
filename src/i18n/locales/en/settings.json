@@ -562,6 +562,9 @@
 			},
 			"tokenPoolCount": "{{count}} key(s) loaded",
 			"tokenPoolHint": "Auto token rotation and failover",
+			"importFile": "Import file",
+			"importedSuccess": "Imported {{count}} key(s) ({{total}} total)",
+			"importedNone": "No valid API keys found in file",
 			"baseUrl": {
 				"label": "Base URL"
 			},

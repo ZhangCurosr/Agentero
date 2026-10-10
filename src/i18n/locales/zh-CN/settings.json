@@ -562,6 +562,9 @@
 			},
 			"tokenPoolCount": "已配置 {{count}} 个 Key",
 			"tokenPoolHint": "自动轮询与故障转移",
+			"importFile": "导入文件",
+			"importedSuccess": "已导入 {{count}} 个 Key（共 {{total}} 个）",
+			"importedNone": "文件中未找到有效 API Key",
 			"baseUrl": {
 				"label": "Base URL"
 			},
