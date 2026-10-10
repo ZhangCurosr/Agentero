@@ -1,5 +1,5 @@
 import { ChevronRight, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
 	PROVIDER_INPUT_CLASS,
@@ -16,6 +16,7 @@ import {
 } from "@/components/settings/settings-layout";
 import type { SettingsHostContext } from "@/components/settings/types";
 import { useBuiltinProviderAvailable } from "@/components/settings/use-builtin-provider";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
 	Collapsible,
@@ -39,6 +40,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
 	Tooltip,
 	TooltipContent,
@@ -555,6 +557,14 @@ function ProviderConfigCard({
 		};
 	}, []);
 
+	const mineruKeyCount = useMemo(() => {
+		if (provider.id !== "mineru" || !displayApiKey.trim()) return 0;
+		return displayApiKey
+			.split(/[\n\r,;]+/)
+			.map((s) => s.trim().replace(/#.*/, ""))
+			.filter((s) => s.length > 0).length;
+	}, [provider.id, displayApiKey]);
+
 	const statusLabel = t(PROBE_LABEL_KEYS[status]);
 
 	return (
@@ -609,39 +619,95 @@ function ProviderConfigCard({
 					<ProviderFieldRow
 						label={t("layout.providerConfig.apiKey.label")}
 						htmlFor={`layout-provider-${provider.id}-api-key`}
+						className={
+							provider.id === "mineru" ? "items-start pt-1" : undefined
+						}
 					>
-						<Input
-							id={`layout-provider-${provider.id}-api-key`}
-							type="password"
-							value={displayApiKey}
-							placeholder={t(
-								`layout.providerConfig.apiKey.placeholder.${provider.id}` as "layout.providerConfig.apiKey.placeholder.paddle",
-							)}
-							className={PROVIDER_INPUT_CLASS}
-							spellCheck={false}
-							autoComplete="off"
-							onChange={(e) => {
-								const next = e.target.value;
-								if (!next.trim()) {
-									setDraft((prev) => ({ ...prev, apiKey: "" }));
-									// Clear immediately — do not wait for Confirm.
-									if (
-										stored.apiKey.trim() ||
-										(isLayoutBackend(provider.id) &&
-											layout.backend === provider.id) ||
-										(isParserBackend(provider.id) &&
-											layout.parserBackend === provider.id)
-									) {
-										void persistConfig("");
-									} else {
-										setStatus("idle");
+						{provider.id === "mineru" ? (
+							<div className="flex-1 space-y-1.5">
+								<Textarea
+									id={`layout-provider-${provider.id}-api-key`}
+									value={displayApiKey}
+									placeholder={t(
+										`layout.providerConfig.apiKey.placeholder.${provider.id}` as "layout.providerConfig.apiKey.placeholder.mineru",
+									)}
+									rows={mineruKeyCount > 3 ? 5 : 2}
+									className={cn(
+										PROVIDER_INPUT_CLASS,
+										"h-auto min-h-16 resize-y font-mono text-xs leading-normal py-1.5",
+									)}
+									spellCheck={false}
+									autoComplete="off"
+									onChange={(e) => {
+										const next = e.target.value;
+										if (!next.trim()) {
+											setDraft((prev) => ({ ...prev, apiKey: "" }));
+											if (
+												stored.apiKey.trim() ||
+												(isLayoutBackend(provider.id) &&
+													layout.backend === provider.id) ||
+												(isParserBackend(provider.id) &&
+													layout.parserBackend === provider.id)
+											) {
+												void persistConfig("");
+											} else {
+												setStatus("idle");
+											}
+											return;
+										}
+										setDraft((prev) => ({ ...prev, apiKey: next }));
+									}}
+								/>
+								{mineruKeyCount > 0 && (
+									<div className="flex items-center justify-between text-[11px] text-muted-foreground">
+										<Badge
+											variant="secondary"
+											className="h-4.5 px-1.5 text-[10px] font-normal"
+										>
+											{t("layout.providerConfig.tokenPoolCount", {
+												count: mineruKeyCount,
+											})}
+										</Badge>
+										<span className="text-[10px]">
+											{t("layout.providerConfig.tokenPoolHint")}
+										</span>
+									</div>
+								)}
+							</div>
+						) : (
+							<Input
+								id={`layout-provider-${provider.id}-api-key`}
+								type="password"
+								value={displayApiKey}
+								placeholder={t(
+									`layout.providerConfig.apiKey.placeholder.${provider.id}` as "layout.providerConfig.apiKey.placeholder.paddle",
+								)}
+								className={PROVIDER_INPUT_CLASS}
+								spellCheck={false}
+								autoComplete="off"
+								onChange={(e) => {
+									const next = e.target.value;
+									if (!next.trim()) {
+										setDraft((prev) => ({ ...prev, apiKey: "" }));
+										// Clear immediately — do not wait for Confirm.
+										if (
+											stored.apiKey.trim() ||
+											(isLayoutBackend(provider.id) &&
+												layout.backend === provider.id) ||
+											(isParserBackend(provider.id) &&
+												layout.parserBackend === provider.id)
+										) {
+											void persistConfig("");
+										} else {
+											setStatus("idle");
+										}
+										return;
 									}
-									return;
-								}
-								setDraft((prev) => ({ ...prev, apiKey: next }));
-							}}
-							onFocus={(e) => e.target.select()}
-						/>
+									setDraft((prev) => ({ ...prev, apiKey: next }));
+								}}
+								onFocus={(e) => e.target.select()}
+							/>
+						)}
 					</ProviderFieldRow>
 				) : null}
 				{provider.supportsBaseUrl ? (

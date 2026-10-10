@@ -63,13 +63,15 @@ export function ProviderFieldRow({
 	label,
 	htmlFor,
 	children,
+	className,
 }: {
 	label: ReactNode;
 	htmlFor: string;
 	children: ReactNode;
+	className?: string;
 }) {
 	return (
-		<div className="flex items-center gap-2">
+		<div className={cn("flex items-center gap-2", className)}>
 			<Label
 				htmlFor={htmlFor}
 				className="w-20 shrink-0 font-normal text-muted-foreground text-xs"

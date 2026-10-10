@@ -59,17 +59,19 @@ fn is_builtin_provider(provider: &str) -> bool {
 /// an all-asterisk value as “keep previous key”.
 pub fn is_translate_api_key_mask(key: &str) -> bool {
     let t = key.trim();
-    !t.is_empty() && t.chars().all(|c| c == '*')
+    !t.is_empty() && t.chars().all(|c| c == '*' || c == '\n' || c == '\r' || c == ' ')
 }
 
-/// Replace a non-empty secret with the same number of `*` characters.
+/// Replace a non-empty secret with the same number of `*` characters (preserving newlines if multiline).
 pub fn mask_translate_api_key(key: &str) -> String {
-    let n = key.trim().chars().count();
-    if n == 0 {
-        String::new()
-    } else {
-        "*".repeat(n)
+    let trimmed = key.trim();
+    if trimmed.is_empty() {
+        return String::new();
     }
+    trimmed
+        .chars()
+        .map(|c| if c == '\n' || c == '\r' { c } else { '*' })
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, specta::Type)]

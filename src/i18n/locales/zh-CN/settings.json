@@ -556,10 +556,12 @@
 				"label": "API Key",
 				"placeholder": {
 					"paddle": "填写 Paddle API Key",
-					"mineru": "填写 MinerU API Key",
+					"mineru": "填写 MinerU API Key，支持多 Key 每行一个",
 					"openaiCompatible": "填写 API Key（如硅基流动）"
 				}
 			},
+			"tokenPoolCount": "已配置 {{count}} 个 Key",
+			"tokenPoolHint": "自动轮询与故障转移",
 			"baseUrl": {
 				"label": "Base URL"
 			},

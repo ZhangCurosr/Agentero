@@ -100,26 +100,160 @@ fn ensure_base_url_scheme(base: &str) -> Result<(), AppError> {
     ))
 }
 
-fn resolve_target(credentials: &HostedProviderCredentials) -> Result<(String, String), AppError> {
-    let api_key = credentials
-        .api_key
-        .as_deref()
-        .map(str::trim)
-        .filter(|k| !k.is_empty())
-        .ok_or_else(|| {
-            AppError::message("MinerU layout service requires apiKey (Settings → Layout)")
-        })?
-        .to_string();
-    let base = credentials
-        .base_url
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(MINERU_BASE_URL)
-        .trim_end_matches('/')
-        .to_string();
-    ensure_base_url_scheme(&base)?;
-    Ok((base, format!("Bearer {api_key}")))
+/// Parse raw api_key string into individual tokens (separated by newlines, commas, or semicolons).
+pub fn split_mineru_tokens(raw: &str) -> Vec<String> {
+    raw.split(|c| c == '\n' || c == '\r' || c == ',' || c == ';')
+        .map(|line| {
+            let without_comment = line.split('#').next().unwrap_or("");
+            without_comment.trim()
+        })
+        .filter(|t| !t.is_empty() && !t.chars().all(|c| c == '*'))
+        .map(str::to_string)
+        .collect()
+}
+
+#[derive(Debug, Clone)]
+struct TokenSlot {
+    token: String,
+    cooldown_until: Instant,
+    suspend_until: Instant,
+    is_banned: bool,
+    ok_count: u32,
+    err_count: u32,
+}
+
+impl TokenSlot {
+    fn new(token: String) -> Self {
+        let now = Instant::now();
+        Self {
+            token,
+            cooldown_until: now,
+            suspend_until: now,
+            is_banned: false,
+            ok_count: 0,
+            err_count: 0,
+        }
+    }
+
+    fn is_available(&self) -> bool {
+        if self.is_banned {
+            return false;
+        }
+        let now = Instant::now();
+        now >= self.cooldown_until && now >= self.suspend_until
+    }
+}
+
+static TOKEN_POOL: std::sync::OnceLock<std::sync::Mutex<TokenPoolInner>> = std::sync::OnceLock::new();
+
+struct TokenPoolInner {
+    slots: Vec<TokenSlot>,
+    rr_index: usize,
+}
+
+fn get_token_pool() -> &'static std::sync::Mutex<TokenPoolInner> {
+    TOKEN_POOL.get_or_init(|| {
+        std::sync::Mutex::new(TokenPoolInner {
+            slots: Vec::new(),
+            rr_index: 0,
+        })
+    })
+}
+
+/// Sync raw tokens string into the global pool while preserving existing health states.
+fn sync_pool_tokens(raw: &str) -> Vec<String> {
+    let tokens = split_mineru_tokens(raw);
+    let mut guard = get_token_pool().lock().unwrap_or_else(|e| e.into_inner());
+    let mut new_slots = Vec::new();
+    for t in &tokens {
+        if let Some(existing) = guard.slots.iter().find(|s| s.token == *t) {
+            new_slots.push(existing.clone());
+        } else {
+            new_slots.push(TokenSlot::new(t.clone()));
+        }
+    }
+    guard.slots = new_slots;
+    tokens
+}
+
+/// Pick an available token from the pool.
+fn acquire_pool_token(raw_tokens: &[String], exclude: &HashSet<String>) -> Option<String> {
+    if raw_tokens.is_empty() {
+        return None;
+    }
+    let mut guard = get_token_pool().lock().unwrap_or_else(|e| e.into_inner());
+    if guard.slots.is_empty() {
+        return raw_tokens.iter().find(|t| !exclude.contains(*t)).cloned();
+    }
+    let total = guard.slots.len();
+    // 1. Try round-robin from current index to find an available slot not in exclude
+    for _ in 0..total {
+        let idx = guard.rr_index % total;
+        guard.rr_index = (guard.rr_index + 1) % total;
+        let slot = &guard.slots[idx];
+        if slot.is_available() && !exclude.contains(&slot.token) {
+            return Some(slot.token.clone());
+        }
+    }
+    // 2. If no available slot is found and exclude is empty, pick slot with earliest cooldown/suspend
+    if exclude.is_empty() {
+        let best = guard
+            .slots
+            .iter()
+            .filter(|s| !s.is_banned)
+            .min_by_key(|s| s.cooldown_until.max(s.suspend_until))
+            .map(|s| s.token.clone());
+        return best.or_else(|| raw_tokens.first().cloned());
+    }
+    None
+}
+
+fn mark_token_ok(token: &str) {
+    let mut guard = get_token_pool().lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(slot) = guard.slots.iter_mut().find(|s| s.token == token) {
+        slot.ok_count += 1;
+    }
+}
+
+fn mark_token_cooldown(token: &str, seconds: u64) {
+    let mut guard = get_token_pool().lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(slot) = guard.slots.iter_mut().find(|s| s.token == token) {
+        slot.err_count += 1;
+        slot.cooldown_until = Instant::now() + Duration::from_secs(seconds);
+        log::warn!(
+            target: "agentero::layout::mineru",
+            "MinerU token ...{} rate-limited (429), cooling for {}s",
+            &token[token.len().saturating_sub(6)..],
+            seconds
+        );
+    }
+}
+
+fn mark_token_suspend(token: &str, hours: u64) {
+    let mut guard = get_token_pool().lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(slot) = guard.slots.iter_mut().find(|s| s.token == token) {
+        slot.err_count += 1;
+        slot.suspend_until = Instant::now() + Duration::from_secs(hours * 3600);
+        log::warn!(
+            target: "agentero::layout::mineru",
+            "MinerU token ...{} quota exhausted, suspended for {}h",
+            &token[token.len().saturating_sub(6)..],
+            hours
+        );
+    }
+}
+
+fn mark_token_banned(token: &str, reason: &str) {
+    let mut guard = get_token_pool().lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(slot) = guard.slots.iter_mut().find(|s| s.token == token) {
+        slot.err_count += 1;
+        slot.is_banned = true;
+        log::warn!(
+            target: "agentero::layout::mineru",
+            "MinerU token ...{} banned ({reason})",
+            &token[token.len().saturating_sub(6)..]
+        );
+    }
 }
 
 /// MinerU top-level `code` may be a number (`0`, `-500`, `-10002`) or a
@@ -143,14 +277,35 @@ fn mineru_msg(body: &Value) -> String {
         .to_string()
 }
 
-fn is_token_error_code(code: &str) -> bool {
-    matches!(code, "A0202" | "A0211")
+fn is_token_error_code(code: &str, msg: &str, status: StatusCode) -> bool {
+    status == StatusCode::UNAUTHORIZED
+        || status == StatusCode::FORBIDDEN
+        || matches!(code, "A0202" | "A0211" | "401" | "403")
+        || (msg.to_ascii_lowercase().contains("token")
+            && (msg.contains("invalid") || msg.contains("expired") || msg.contains("错误") || msg.contains("过期")))
+}
+
+fn is_quota_error_code(code: &str, msg: &str) -> bool {
+    matches!(code, "-60018" | "-60019")
+        || msg.contains("daily limit")
+        || msg.contains("limit reached")
+        || msg.contains("quota")
+        || msg.contains("配额")
+        || msg.contains("额度")
+}
+
+fn is_rate_limit(code: &str, msg: &str, status: StatusCode) -> bool {
+    status == StatusCode::TOO_MANY_REQUESTS
+        || code == "429"
+        || msg.contains("too many requests")
+        || msg.contains("rate limit")
+        || msg.contains("限流")
 }
 
 fn mineru_api_error(context: &str, body: &Value) -> AppError {
     let code = mineru_code(body);
     let msg = mineru_msg(body);
-    if is_token_error_code(&code) {
+    if is_token_error_code(&code, &msg, StatusCode::OK) {
         AppError::message(format!(
             "MinerU {context} failed: invalid API token ({code})"
         ))
@@ -543,17 +698,29 @@ fn parse_result_zip(bytes: &[u8]) -> Result<LayoutRemoteAnalyzePdfResult, AppErr
     })
 }
 
-/// Request one presigned upload URL; returns `(batch_id, upload_url)`.
+enum UploadRequestResult {
+    Success {
+        batch_id: String,
+        upload_url: String,
+    },
+    RateLimited(String),
+    QuotaExhausted(String),
+    AuthFailed(String),
+    ServerError(String),
+    Fatal(AppError),
+}
+
+/// Request one presigned upload URL with a specific token; returns `UploadRequestResult`.
 /// `language` selects the OCR language pack; `is_ocr` forces OCR even when
 /// the PDF carries a text layer (scanned-document option).
 async fn request_upload_url(
     client: &reqwest::Client,
     base: &str,
-    auth: &str,
+    token: &str,
     file_name: &str,
     language: &str,
     is_ocr: bool,
-) -> Result<(String, String), AppError> {
+) -> UploadRequestResult {
     let body = json!({
         "files": [{ "name": file_name, "is_ocr": is_ocr }],
         "language": language,
@@ -561,41 +728,80 @@ async fn request_upload_url(
         "enable_formula": true,
         "enable_table": true,
     });
-    let response = client
+    let auth = format!("Bearer {token}");
+    let response = match client
         .post(format!("{base}/api/v4/file-urls/batch"))
-        .header("Authorization", auth)
+        .header("Authorization", &auth)
         .json(&body)
         .send()
         .await
-        .map_err(|e| AppError::message(format!("MinerU batch submit failed: {e}")))?;
+    {
+        Ok(r) => r,
+        Err(e) => return UploadRequestResult::ServerError(format!("network error: {e}")),
+    };
     let status = response.status();
-    let text = response
-        .text()
-        .await
-        .map_err(|e| AppError::message(format!("MinerU response read failed: {e}")))?;
-    let value: Value = serde_json::from_str(&text).map_err(|_| {
-        let snippet = http::http_err_snippet(&text);
-        AppError::message(format!(
-            "MinerU batch submit failed (HTTP {status}): {snippet}"
-        ))
-    })?;
-    if mineru_code(&value) != "0" {
-        return Err(mineru_api_error("batch submit", &value));
+    let text = match response.text().await {
+        Ok(t) => t,
+        Err(e) => return UploadRequestResult::ServerError(format!("read error: {e}")),
+    };
+    let value: Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(_) => {
+            let snippet = http::http_err_snippet(&text);
+            if status == StatusCode::TOO_MANY_REQUESTS {
+                return UploadRequestResult::RateLimited(format!("HTTP 429: {snippet}"));
+            } else if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+                return UploadRequestResult::AuthFailed(format!("HTTP {status}: {snippet}"));
+            } else if status.is_server_error() {
+                return UploadRequestResult::ServerError(format!("HTTP {status}: {snippet}"));
+            }
+            return UploadRequestResult::Fatal(AppError::message(format!(
+                "MinerU batch submit failed (HTTP {status}): {snippet}"
+            )));
+        }
+    };
+    let code = mineru_code(&value);
+    let msg = mineru_msg(&value);
+
+    if is_rate_limit(&code, &msg, status) {
+        return UploadRequestResult::RateLimited(format!("HTTP {status} ({code}): {msg}"));
     }
+    if is_quota_error_code(&code, &msg) {
+        return UploadRequestResult::QuotaExhausted(format!("code {code}: {msg}"));
+    }
+    if is_token_error_code(&code, &msg, status) {
+        return UploadRequestResult::AuthFailed(format!("code {code}: {msg}"));
+    }
+    if code != "0" && !code.is_empty() {
+        return UploadRequestResult::Fatal(mineru_api_error("batch submit", &value));
+    }
+
     let data = value.get("data").cloned().unwrap_or_default();
-    let batch_id = data
-        .get("batch_id")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .ok_or_else(|| AppError::message("Unexpected MinerU response: missing batch_id"))?;
-    let upload_url = data
+    let batch_id = match data.get("batch_id").and_then(Value::as_str) {
+        Some(id) => id.to_string(),
+        None => {
+            return UploadRequestResult::Fatal(AppError::message(
+                "Unexpected MinerU response: missing batch_id",
+            ))
+        }
+    };
+    let upload_url = match data
         .get("file_urls")
         .and_then(Value::as_array)
         .and_then(|urls| urls.first())
         .and_then(Value::as_str)
-        .map(str::to_string)
-        .ok_or_else(|| AppError::message("Unexpected MinerU response: missing file_urls"))?;
-    Ok((batch_id, upload_url))
+    {
+        Some(url) => url.to_string(),
+        None => {
+            return UploadRequestResult::Fatal(AppError::message(
+                "Unexpected MinerU response: missing file_urls",
+            ))
+        }
+    };
+    UploadRequestResult::Success {
+        batch_id,
+        upload_url,
+    }
 }
 
 async fn analyze_pdf(ctx: LayoutAnalyzeContext) -> Result<LayoutRemoteAnalyzePdfResult, AppError> {
@@ -653,29 +859,122 @@ pub(crate) async fn run_mineru_extract(
     progress: super::ProgressFn<'_>,
     cancel: super::CancelFn<'_>,
 ) -> Result<Vec<u8>, AppError> {
-    let (base, auth) = resolve_target(credentials)?;
-    let client = http::client(MINERU_REQUEST_TIMEOUT)?;
+    let raw_key = credentials
+        .api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+        .ok_or_else(|| {
+            AppError::message("MinerU layout service requires apiKey (Settings → Layout)")
+        })?;
+    let base = credentials
+        .base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(MINERU_BASE_URL)
+        .trim_end_matches('/')
+        .to_string();
+    ensure_base_url_scheme(&base)?;
 
-    // 1) Request the presigned upload URL, then PUT the raw PDF bytes
-    //    (no Content-Type — the presigned signature does not cover one).
-    progress("uploading", None, None);
+    let tokens = sync_pool_tokens(raw_key);
+    if tokens.is_empty() {
+        return Err(AppError::message("No valid MinerU API tokens provided"));
+    }
+
+    let client = http::client(MINERU_REQUEST_TIMEOUT)?;
     let language = credentials
         .language
         .as_deref()
         .map(str::trim)
         .filter(|l| !l.is_empty())
         .unwrap_or(MINERU_DEFAULT_LANGUAGE);
-    let (batch_id, upload_url) = request_upload_url(
-        &client,
-        &base,
-        &auth,
-        file_name,
-        language,
-        credentials.is_ocr,
-    )
-    .await?;
+
+    // 1) Request upload URL with automatic token rotation and failover
+    progress("uploading", None, None);
+    let max_attempts = tokens.len().clamp(1, 20);
+    let mut tried = HashSet::new();
+    let mut last_error_msg = String::new();
+    let mut active_token = String::new();
+    let mut active_batch_id = String::new();
+    let mut active_upload_url = String::new();
+
+    for attempt in 0..max_attempts {
+        if cancel() {
+            return Err(AppError::message(CANCELLED_MESSAGE));
+        }
+
+        let token = match acquire_pool_token(&tokens, &tried) {
+            Some(t) => t,
+            None => {
+                log::warn!(
+                    target: "agentero::layout::mineru",
+                    "No more available tokens in pool after {attempt} attempts"
+                );
+                break;
+            }
+        };
+        tried.insert(token.clone());
+
+        match request_upload_url(
+            &client,
+            &base,
+            &token,
+            file_name,
+            language,
+            credentials.is_ocr,
+        )
+        .await
+        {
+            UploadRequestResult::Success {
+                batch_id,
+                upload_url,
+            } => {
+                mark_token_ok(&token);
+                active_token = token;
+                active_batch_id = batch_id;
+                active_upload_url = upload_url;
+                break;
+            }
+            UploadRequestResult::RateLimited(msg) => {
+                last_error_msg = format!("Token rate-limited (429): {msg}");
+                mark_token_cooldown(&token, 30);
+                continue;
+            }
+            UploadRequestResult::QuotaExhausted(msg) => {
+                last_error_msg = format!("Token quota exhausted: {msg}");
+                mark_token_suspend(&token, 12);
+                continue;
+            }
+            UploadRequestResult::AuthFailed(msg) => {
+                last_error_msg = format!("Token auth failed: {msg}");
+                mark_token_banned(&token, &msg);
+                continue;
+            }
+            UploadRequestResult::ServerError(msg) => {
+                last_error_msg = format!("Server error: {msg}");
+                tokio::time::sleep(Duration::from_millis(1500)).await;
+                continue;
+            }
+            UploadRequestResult::Fatal(err) => {
+                return Err(err);
+            }
+        }
+    }
+
+    if active_batch_id.is_empty() || active_upload_url.is_empty() {
+        return Err(AppError::message(format!(
+            "MinerU token pool exhausted or all tokens failed. Last error: {}",
+            if last_error_msg.is_empty() {
+                "No tokens available"
+            } else {
+                &last_error_msg
+            }
+        )));
+    }
+
     let upload = client
-        .put(&upload_url)
+        .put(&active_upload_url)
         .body(pdf_bytes)
         .send()
         .await
@@ -687,8 +986,9 @@ pub(crate) async fn run_mineru_extract(
         )));
     }
 
-    // 2) Poll until done (deadline guards a stuck task).
-    let poll_url = format!("{base}/api/v4/extract-results/batch/{batch_id}");
+    // 2) Poll until done with active_token
+    let auth = format!("Bearer {active_token}");
+    let poll_url = format!("{base}/api/v4/extract-results/batch/{active_batch_id}");
     let started = Instant::now();
     let zip_url = loop {
         if cancel() {
@@ -715,7 +1015,17 @@ pub(crate) async fn run_mineru_extract(
                 "MinerU task poll failed (HTTP {poll_status}): {snippet}"
             ))
         })?;
-        if mineru_code(&poll_value) != "0" {
+        let code = mineru_code(&poll_value);
+        let msg = mineru_msg(&poll_value);
+        if is_rate_limit(&code, &msg, poll_status) {
+            log::warn!(
+                target: "agentero::layout::mineru",
+                "MinerU poll rate-limited (HTTP {poll_status}): {msg}, backing off"
+            );
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            continue;
+        }
+        if code != "0" && !code.is_empty() {
             return Err(mineru_api_error("task poll", &poll_value));
         }
         let result = poll_value
@@ -791,50 +1101,94 @@ pub(crate) async fn run_mineru_extract(
     Ok(zip_bytes)
 }
 
-/// Probe outcome for the settings connectivity check.
-/// A non-auth business response (currently `-10002 file list is empty`)
-/// proves the token was authenticated; token error codes or HTTP 401 do not.
 fn probe_token_valid(body: &Value, status: StatusCode) -> bool {
-    !is_token_error_code(&mineru_code(body)) && status != StatusCode::UNAUTHORIZED
+    let code = mineru_code(body);
+    let msg = mineru_msg(body);
+    !is_token_error_code(&code, &msg, status)
 }
 
-/// Connectivity probe: send a minimal (invalid-params) batch request; a
-/// parameter error proves the token was accepted, a token error code does
-/// not. Runs in the Host so it is not subject to WebView CORS and honors
-/// the app proxy. The probe image is unused — MinerU has no image endpoint.
 async fn probe(
     credentials: &HostedProviderCredentials,
     _args: LayoutRemoteProbeArgs,
 ) -> Result<LayoutRemoteProbeResult, AppError> {
-    let (base, auth) = resolve_target(credentials)?;
+    let raw_key = credentials
+        .api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+        .ok_or_else(|| {
+            AppError::message("MinerU layout service requires apiKey (Settings → Layout)")
+        })?;
+    let base = credentials
+        .base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(MINERU_BASE_URL)
+        .trim_end_matches('/')
+        .to_string();
+    ensure_base_url_scheme(&base)?;
+
+    let tokens = sync_pool_tokens(raw_key);
+    if tokens.is_empty() {
+        return Err(AppError::message("No valid MinerU API tokens provided"));
+    }
+
     let client = http::client(Duration::from_secs(30))?;
-    let response = client
-        .post(format!("{base}/api/v4/file-urls/batch"))
-        .header("Authorization", &auth)
-        .json(&json!({ "files": [] }))
-        .send()
-        .await
-        .map_err(|e| AppError::message(format!("MinerU probe failed: {e}")))?;
-    let status = response.status();
-    let text = response
-        .text()
-        .await
-        .map_err(|e| AppError::message(format!("MinerU probe read failed: {e}")))?;
-    let value: Value = serde_json::from_str(&text).map_err(|_| {
-        let snippet = http::http_err_snippet(&text);
-        AppError::message(format!("MinerU probe failed (HTTP {status}): {snippet}"))
-    })?;
-    if probe_token_valid(&value, status) {
-        let job_id = ["traceId", "trace_id"]
-            .iter()
-            .find_map(|k| value.get(*k).and_then(Value::as_str))
-            .unwrap_or("mineru-probe-ok")
-            .to_string();
-        Ok(LayoutRemoteProbeResult { job_id })
+    let mut last_err = String::new();
+    let mut valid_count = 0;
+    let test_limit = tokens.len().min(3);
+    let mut tried = HashSet::new();
+
+    for _ in 0..test_limit {
+        let token = match acquire_pool_token(&tokens, &tried) {
+            Some(t) => t,
+            None => break,
+        };
+        tried.insert(token.clone());
+        let auth = format!("Bearer {token}");
+        let response = client
+            .post(format!("{base}/api/v4/file-urls/batch"))
+            .header("Authorization", &auth)
+            .json(&json!({ "files": [] }))
+            .send()
+            .await
+            .map_err(|e| AppError::message(format!("MinerU probe failed: {e}")))?;
+        let status = response.status();
+        let text = response
+            .text()
+            .await
+            .map_err(|e| AppError::message(format!("MinerU probe read failed: {e}")))?;
+        let value: Value = serde_json::from_str(&text).map_err(|_| {
+            let snippet = http::http_err_snippet(&text);
+            AppError::message(format!("MinerU probe failed (HTTP {status}): {snippet}"))
+        })?;
+
+        if probe_token_valid(&value, status) {
+            mark_token_ok(&token);
+            valid_count += 1;
+            break;
+        } else {
+            let code = mineru_code(&value);
+            let msg = mineru_msg(&value);
+            mark_token_banned(&token, "probe auth failed");
+            let tail = &token[token.len().saturating_sub(6)..];
+            last_err = format!("Token ...{tail} invalid ({code}: {msg})");
+        }
+    }
+
+    if valid_count > 0 {
+        Ok(LayoutRemoteProbeResult {
+            job_id: format!("MinerU token pool active ({} key(s) loaded)", tokens.len()),
+        })
     } else {
-        let code = mineru_code(&value);
         Err(AppError::message(format!(
-            "MinerU probe failed: invalid API token ({code})"
+            "MinerU probe failed for tested token(s): {}",
+            if last_err.is_empty() {
+                "Authentication failed"
+            } else {
+                &last_err
+            }
         )))
     }
 }
@@ -1127,5 +1481,33 @@ mod tests {
         assert!(!probe_token_valid(&msg_code, unauthorized));
         let bare_401: Value = serde_json::from_str(r#"{"success":false}"#).unwrap();
         assert!(!probe_token_valid(&bare_401, unauthorized));
+    }
+
+    #[test]
+    fn parses_and_rotates_mineru_tokens() {
+        let raw = "token1\n  token2  \r\n# comment\ntoken3,token4;token5";
+        let tokens = split_mineru_tokens(raw);
+        assert_eq!(tokens, vec!["token1", "token2", "token3", "token4", "token5"]);
+
+        let synced = sync_pool_tokens(raw);
+        assert_eq!(synced.len(), 5);
+
+        let mut tried = HashSet::new();
+        let t1 = acquire_pool_token(&synced, &tried).unwrap();
+        tried.insert(t1.clone());
+        let t2 = acquire_pool_token(&synced, &tried).unwrap();
+        assert_ne!(t1, t2);
+
+        // Suspend t2 and verify it is not picked while available tokens exist
+        mark_token_suspend(&t2, 12);
+        let mut tried_fresh = HashSet::new();
+        let mut picked = Vec::new();
+        for _ in 0..4 {
+            if let Some(t) = acquire_pool_token(&synced, &tried_fresh) {
+                tried_fresh.insert(t.clone());
+                picked.push(t);
+            }
+        }
+        assert!(!picked.contains(&t2));
     }
 }

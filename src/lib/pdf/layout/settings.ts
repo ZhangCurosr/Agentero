@@ -152,13 +152,20 @@ export function isLayoutProviderId(value: unknown): value is LayoutProviderId {
 	);
 }
 
-/** Same mask convention as translate BYOK keys (all `*`, same length). */
+/** Same mask convention as translate BYOK keys (all `*`, same length, preserving newlines). */
 export function maskLayoutApiKey(key: string): string {
-	const n = key.trim().length;
-	return n === 0 ? "" : "*".repeat(n);
+	const trimmed = key.trim();
+	if (trimmed.length === 0) return "";
+	return trimmed
+		.split("")
+		.map((c) => (c === "\n" || c === "\r" ? c : "*"))
+		.join("");
 }
 
 export function isLayoutApiKeyMask(key: string): boolean {
 	const t = key.trim();
-	return t.length > 0 && t.split("").every((c) => c === "*");
+	return (
+		t.length > 0 &&
+		t.split("").every((c) => c === "*" || c === "\n" || c === "\r" || c === " ")
+	);
 }

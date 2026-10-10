@@ -556,10 +556,12 @@
 				"label": "API key",
 				"placeholder": {
 					"paddle": "Enter your Paddle API key",
-					"mineru": "Enter your MinerU API key",
+					"mineru": "Enter your MinerU API key(s), one per line",
 					"openaiCompatible": "Enter your API key (e.g. SiliconFlow)"
 				}
 			},
+			"tokenPoolCount": "{{count}} key(s) loaded",
+			"tokenPoolHint": "Auto token rotation and failover",
 			"baseUrl": {
 				"label": "Base URL"
 			},
