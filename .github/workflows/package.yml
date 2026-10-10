@@ -51,14 +51,24 @@ jobs:
       - name: Setup MSVC developer environment
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Ensure MSVC link.exe is used
+      - name: Remove conflicting Git link.exe
         shell: pwsh
         run: |
-          $cleanPath = ($env:PATH -split ';') | Where-Object { $_ -notmatch 'Git[\\/]usr[\\/]bin' }
-          $cleanPathStr = $cleanPath -join ';'
-          "PATH=$cleanPathStr" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          $msvcLink = Get-Command link.exe | Select-Object -ExpandProperty Source
-          Write-Host "Active linker: $msvcLink"
+          $gitLinks = @(
+            "C:\Program Files\Git\usr\bin\link.exe",
+            "C:\Program Files\Git\bin\link.exe"
+          )
+          foreach ($link in $gitLinks) {
+            if (Test-Path $link) {
+              Write-Host "Removing conflicting linker: $link"
+              Remove-Item -Path $link -Force -ErrorAction SilentlyContinue
+            }
+          }
+          $activeLink = (Get-Command link.exe -ErrorAction SilentlyContinue)?.Source
+          Write-Host "Active MSVC linker: $activeLink"
+          if ($activeLink) {
+            "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$activeLink" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          }
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -77,7 +87,9 @@ jobs:
         shell: pwsh
         env:
           NODE_OPTIONS: --max-old-space-size=6144
-        run: pnpm tauri build
+        run: |
+          Remove-Item -Path "C:\Program Files\Git\usr\bin\link.exe" -Force -ErrorAction SilentlyContinue
+          pnpm tauri build
 
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
