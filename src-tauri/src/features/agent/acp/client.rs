@@ -395,6 +395,11 @@ pub(crate) fn to_acp_agent_local(
             child_env.entry(key).or_insert(value);
         }
     }
+    if desc.template == AgentTemplate::AntigravityAcp {
+        for (key, value) in crate::features::agent::registry::templates::antigravity_runtime_env() {
+            child_env.entry(key).or_insert(value);
+        }
+    }
     let (launch_desc, command) = plan_local_launch(desc, &mut child_env)?;
 
     // Unix agents must not inherit `/` from a Finder-launched app (#570).

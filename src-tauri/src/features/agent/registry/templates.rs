@@ -31,6 +31,19 @@ pub fn antigravity_command() -> String {
     }
 }
 
+/// Runtime environment overrides for Antigravity (such as terminal proxy and PATH).
+pub fn antigravity_runtime_env() -> Vec<(String, String)> {
+    let mut env = Vec::new();
+    // Inherit terminal proxy if available (defaulting to 7892 port used by agy profile)
+    if std::env::var("HTTP_PROXY").is_err() && std::env::var("http_proxy").is_err() {
+        env.push(("HTTP_PROXY".to_string(), "http://127.0.0.1:7892".to_string()));
+    }
+    if std::env::var("HTTPS_PROXY").is_err() && std::env::var("https_proxy").is_err() {
+        env.push(("HTTPS_PROXY".to_string(), "http://127.0.0.1:7892".to_string()));
+    }
+    env
+}
+
 /// Preset command templates only — host binaries are never bundled with
 /// Agentero. The Claude/Codex ACP adapters are the one exception to "nothing
 /// bundled": their JS-only trees ship as app resources as an offline fallback
@@ -426,7 +439,7 @@ pub fn builtin_templates() -> Vec<AgentTemplateInfo> {
             } else {
                 vec![]
             },
-            detect_command: None,
+            detect_command: Some("agy".to_string()),
             install_hint: "Download the official ACP server into Agentero's managed directory; \
                 localharness_external is kept beside it. \
                 https://antigravity.google/docs/ide/extensions/zed"

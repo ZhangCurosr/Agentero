@@ -504,6 +504,36 @@ pause\r\n"
         .filter(|p| !p.trim().is_empty())
         .unwrap_or_else(|| dir.display().to_string());
 
+    // If the command is agy, launch via PowerShell so user's profile function (with proxies and options) is invoked.
+    let is_agy = command.trim() == "agy" || command.trim().starts_with("agy ");
+    if is_agy {
+        let ps_cmd = format!("& {{ {} }}", command.trim());
+        let (shell_exe, shell_args) = if crate::core::process::discover::resolve_command("pwsh").is_some() {
+            ("pwsh.exe", vec!["-NoExit", "-Command", &ps_cmd])
+        } else {
+            ("powershell.exe", vec!["-NoExit", "-Command", &ps_cmd])
+        };
+
+        if Command::new("wt")
+            .arg("-d")
+            .arg(&start_dir)
+            .arg(shell_exe)
+            .args(&shell_args)
+            .spawn()
+            .is_ok()
+        {
+            return Ok(());
+        }
+        if Command::new(shell_exe)
+            .args(&shell_args)
+            .current_dir(&start_dir)
+            .spawn()
+            .is_ok()
+        {
+            return Ok(());
+        }
+    }
+
     if Command::new("wt")
         .arg("-d")
         .arg(&start_dir)
