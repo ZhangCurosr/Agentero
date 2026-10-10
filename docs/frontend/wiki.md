@@ -27,8 +27,37 @@
 
 标题重命名、跳转和嵌入继续消费同一个结构化 `LinkFragment.path: string[]`。该数组保存 Markdown 中实际写下的完整路径或连续后缀；解析成功后再映射到唯一 canonical heading path。显式标题重命名只改写引用中实际包含的被改名路径段，省略该祖先的后缀引用保持原文。
 
+## 关系图谱（Obsidian 风格）
+
+Agentero 内置高性能 Obsidian 风格知识图谱视图（`agentero:graph`），支持全库 Markdown 笔记、论文条目、双链引用、标签与附件的可视化互联。
+
+### 特性与架构
+
+- **原生 Canvas 2D 物理引擎**：采用 Barnes-Hut 四叉树算法优化 N-body 斥力仿真（$O(N \log N)$），结合弹簧连线力、中心重力与碰撞半径。物理模拟降温稳定后（$\alpha < 0.003$）自动挂起渲染循环，实现零空闲 CPU 占用。
+- **节点类型**：
+  - **Markdown 笔记**：普通笔记文件。
+  - **论文条目**：`papers/<id>` 自动折叠为单篇论文节点，优先读取 `meta.json` 标题或 BibTeX title。
+  - **标签**：以 `#tag` / Frontmatter `tags` 为聚类中心。
+  - **附件**：PDF、图片等资源文件（可切换显示/隐藏）。
+  - **未创建笔记**：存根节点（虚线/空心呈现，支持一键点击创建或打开）。
+- **交互与高亮**：
+  - 丝滑平移（拖拽画布）与缩放（滚轮）。
+  - 节点拖动：支持定点拖拽与力学扰动。
+  - 悬停聚焦：鼠标悬停高亮直接相连的一阶邻居与边，弱化/半透明其余非关联节点。
+  - 单击导航：点击文件/论文节点直接在 Dockview 工作区打开对应标签。
+- **右上角浮动控制面板**（与 Obsidian 交互对齐）：
+  - **筛选 (Filters)**：搜索文件过滤、标签显示开关、附件显示开关、仅显示已创建的笔记、孤立文件开关、重置配置。
+  - **颜色组 (Color Groups)**：支持添加多个规则过滤组（`tag:xxx`、`path:xxx`、关键字），自定义节点着色。
+  - **外观 (Appearance)**：有向箭头开关、文本透明度滑块、节点大小倍率滑块、连线粗细滑块、播放动画（退火重启）。
+  - **力度 (Forces)**：中心力、斥力大小、连线距离、连线强度滑块微调。
+- **工作台集成**：
+  - 侧栏顶栏快捷按钮：`Network` 图标一键打开图谱。
+  - 命令面板：`⌘P` / `Ctrl+P` 输入 `打开关系图谱`。
+  - 状态持久化：配置自动同步至 `localStorage`（`agentero:graph-settings`）。
+
 ## 代码
 
-- 面板：`src/components/wiki/`
+- 关系图谱：`src/components/graph/`（画布、控制面板、容器）、`src/lib/graph/`（数据提取、四叉树模拟、颜色规则、设置持久化）
+- 双链面板：`src/components/wiki/`
 - 逻辑：`src/lib/wiki/`、`wiki-completion.ts`、`wiki-embed.ts`、`wiki-navigation.ts`、`wiki-heading-rename.ts`
 - Host：[../backend/wiki.md](../backend/wiki.md)

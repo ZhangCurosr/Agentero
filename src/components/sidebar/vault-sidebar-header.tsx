@@ -11,6 +11,7 @@ import {
 	FolderOpen,
 	FolderPlus,
 	Loader2,
+	Network,
 	RefreshCw,
 	Server,
 	Trash2,
@@ -98,6 +99,8 @@ export type VaultSidebarHeaderProps = {
 	onMigrateZotero?: () => void;
 	/** Bidirectional Zotero sync (icon in magic-wand popover, right of migrate). */
 	onSyncZotero?: () => void;
+	/** Open Obsidian-style Knowledge Graph view. */
+	onOpenGraph?: () => void;
 };
 
 export const VaultSidebarHeader = memo(function VaultSidebarHeader({
@@ -121,8 +124,9 @@ export const VaultSidebarHeader = memo(function VaultSidebarHeader({
 	onOpenRemoteVault,
 	onMigrateZotero,
 	onSyncZotero,
+	onOpenGraph,
 }: VaultSidebarHeaderProps) {
-	const { t } = useTranslation(["sidebar", "shortcuts", "app"]);
+	const { t } = useTranslation(["sidebar", "shortcuts", "app", "graph"]);
 	const [wandOpen, setWandOpen] = useState(false);
 	const [lookupText, setLookupText] = useState("");
 	const [lookupBusy, setLookupBusy] = useState(false);
@@ -289,191 +293,216 @@ export const VaultSidebarHeader = memo(function VaultSidebarHeader({
 				<PaneHeader
 					className="relative z-10 border-b-0"
 					trailing={
-						<Popover
-							open={wandOpen}
-							onOpenChange={(open) => {
-								setWandOpen(open);
-								if (!open) setLookupError(null);
-							}}
-						>
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<PopoverTrigger asChild>
+						<div className="flex items-center gap-0.5">
+							{onOpenGraph ? (
+								<Tooltip>
+									<TooltipTrigger asChild>
 										<Button
 											type="button"
 											variant="ghost"
 											size="icon-xs"
-											data-magic-wand
-											aria-label={t("lookup.magicWand")}
-											disabled={lookupDisabled}
+											aria-label={t("graph:title", "关系图谱")}
+											disabled={busy || isDemo}
+											onClick={onOpenGraph}
 										>
-											<WandSparkles className="size-3.5" />
+											<Network className="size-3.5" />
 										</Button>
-									</PopoverTrigger>
-								</TooltipTrigger>
-								<TooltipContent side="bottom">
-									{t("lookup.magicWand")}
-									<span className="ml-2 text-muted-foreground">
-										{magicWandShortcut}
-									</span>
-								</TooltipContent>
-							</Tooltip>
-							<PopoverContent
-								align="end"
-								side="bottom"
-								className="w-72 gap-2 p-2.5"
+									</TooltipTrigger>
+									<TooltipContent side="bottom">
+										{t("graph:title", "关系图谱")}
+									</TooltipContent>
+								</Tooltip>
+							) : null}
+							<Popover
+								open={wandOpen}
+								onOpenChange={(open) => {
+									setWandOpen(open);
+									if (!open) setLookupError(null);
+								}}
 							>
-								<form
-									className="flex flex-col gap-2"
-									onSubmit={(e) => {
-										e.preventDefault();
-										void runLookup();
-									}}
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<PopoverTrigger asChild>
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-xs"
+												data-magic-wand
+												aria-label={t("lookup.magicWand")}
+												disabled={lookupDisabled}
+											>
+												<WandSparkles className="size-3.5" />
+											</Button>
+										</PopoverTrigger>
+									</TooltipTrigger>
+									<TooltipContent side="bottom">
+										{t("lookup.magicWand")}
+										<span className="ml-2 text-muted-foreground">
+											{magicWandShortcut}
+										</span>
+									</TooltipContent>
+								</Tooltip>
+								<PopoverContent
+									align="end"
+									side="bottom"
+									className="w-72 gap-2 p-2.5"
 								>
-									<p className="text-muted-foreground text-xs">
-										{t("lookup.addTo", { path: lookupParentDir })}
-									</p>
-									<Textarea
-										ref={lookupTextareaRef}
-										value={lookupText}
-										onChange={(e) => {
-											setLookupText(e.target.value);
-											// Auto-grow up to max-h-32; shrink when lines are removed.
-											const el = lookupTextareaRef.current;
-											if (el) {
-												el.style.height = "auto";
-												el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
-											}
+									<form
+										className="flex flex-col gap-2"
+										onSubmit={(e) => {
+											e.preventDefault();
+											void runLookup();
 										}}
-										onKeyDown={(e) => {
-											if (e.key === "Enter" && !e.shiftKey) {
-												// Let the IME confirm its candidate; don't search yet.
-												if (isBlockedByIme(e)) return;
-												e.preventDefault();
-												void runLookup();
-											}
-										}}
-										{...compositionProps}
-										placeholder={t("lookup.placeholder")}
-										disabled={lookupBusy}
-										className="min-h-[2.5rem] max-h-32 resize-none overflow-y-auto text-xs"
-										rows={1}
-									/>
-									{lookupError ? (
-										<p className="text-destructive text-xs leading-snug">
-											{lookupError}
+									>
+										<p className="text-muted-foreground text-xs">
+											{t("lookup.addTo", { path: lookupParentDir })}
 										</p>
-									) : null}
-									{/* Imports bottom-left (PDF · bibliography · Zotero) · Add bottom-right */}
-									<div className="flex items-center justify-between gap-2">
-										<div className="flex items-center gap-1">
-											{onImportLocalPdf ? (
-												<Tooltip>
-													<TooltipTrigger asChild>
-														<Button
-															type="button"
-															variant="ghost"
-															size="icon-xs"
-															disabled={actionsDisabled || Boolean(importBusy)}
-															aria-label={t("papersLibrary.importPdf")}
-															onClick={() => {
-																void onImportLocalPdf();
-															}}
-														>
-															{importPdfBusy ? (
-																<Loader2 className="size-3.5 animate-spin" />
-															) : (
-																<FileUp className="size-3.5" />
-															)}
-														</Button>
-													</TooltipTrigger>
-													<TooltipContent side="bottom">
-														{t("papersLibrary.importPdf")}
-													</TooltipContent>
-												</Tooltip>
-											) : null}
-											{onImportBibliography ? (
-												<Tooltip>
-													<TooltipTrigger asChild>
-														<Button
-															type="button"
-															variant="ghost"
-															size="icon-xs"
-															disabled={actionsDisabled || Boolean(importBusy)}
-															aria-label={t("papersLibrary.import")}
-															onClick={() => {
-																void onImportBibliography();
-															}}
-														>
-															{importBusy ? (
-																<Loader2 className="size-3.5 animate-spin" />
-															) : (
-																<Upload className="size-3.5" />
-															)}
-														</Button>
-													</TooltipTrigger>
-													<TooltipContent side="bottom">
-														{t("papersLibrary.import")}
-													</TooltipContent>
-												</Tooltip>
-											) : null}
-											{onMigrateZotero ? (
-												<Tooltip>
-													<TooltipTrigger asChild>
-														<Button
-															type="button"
-															variant="ghost"
-															size="icon-xs"
-															disabled={actionsDisabled}
-															aria-label={t("zoteroMigrate.button")}
-															onClick={() => {
-																setWandOpen(false);
-																onMigrateZotero();
-															}}
-														>
-															<SiZotero className="size-3.5 text-[#CC2936]" />
-														</Button>
-													</TooltipTrigger>
-													<TooltipContent side="bottom">
-														{t("zoteroMigrate.button")}
-													</TooltipContent>
-												</Tooltip>
-											) : null}
-											{onSyncZotero ? (
-												<Tooltip>
-													<TooltipTrigger asChild>
-														<Button
-															type="button"
-															variant="ghost"
-															size="icon-xs"
-															disabled={actionsDisabled}
-															aria-label={t("zoteroSync.button")}
-															onClick={() => {
-																setWandOpen(false);
-																onSyncZotero();
-															}}
-														>
-															<RefreshCw className="size-3.5" />
-														</Button>
-													</TooltipTrigger>
-													<TooltipContent side="bottom">
-														{t("zoteroSync.button")}
-													</TooltipContent>
-												</Tooltip>
-											) : null}
+										<Textarea
+											ref={lookupTextareaRef}
+											value={lookupText}
+											onChange={(e) => {
+												setLookupText(e.target.value);
+												// Auto-grow up to max-h-32; shrink when lines are removed.
+												const el = lookupTextareaRef.current;
+												if (el) {
+													el.style.height = "auto";
+													el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
+												}
+											}}
+											onKeyDown={(e) => {
+												if (e.key === "Enter" && !e.shiftKey) {
+													// Let the IME confirm its candidate; don't search yet.
+													if (isBlockedByIme(e)) return;
+													e.preventDefault();
+													void runLookup();
+												}
+											}}
+											{...compositionProps}
+											placeholder={t("lookup.placeholder")}
+											disabled={lookupBusy}
+											className="min-h-[2.5rem] max-h-32 resize-none overflow-y-auto text-xs"
+											rows={1}
+										/>
+										{lookupError ? (
+											<p className="text-destructive text-xs leading-snug">
+												{lookupError}
+											</p>
+										) : null}
+										{/* Imports bottom-left (PDF · bibliography · Zotero) · Add bottom-right */}
+										<div className="flex items-center justify-between gap-2">
+											<div className="flex items-center gap-1">
+												{onImportLocalPdf ? (
+													<Tooltip>
+														<TooltipTrigger asChild>
+															<Button
+																type="button"
+																variant="ghost"
+																size="icon-xs"
+																disabled={
+																	actionsDisabled || Boolean(importBusy)
+																}
+																aria-label={t("papersLibrary.importPdf")}
+																onClick={() => {
+																	void onImportLocalPdf();
+																}}
+															>
+																{importPdfBusy ? (
+																	<Loader2 className="size-3.5 animate-spin" />
+																) : (
+																	<FileUp className="size-3.5" />
+																)}
+															</Button>
+														</TooltipTrigger>
+														<TooltipContent side="bottom">
+															{t("papersLibrary.importPdf")}
+														</TooltipContent>
+													</Tooltip>
+												) : null}
+												{onImportBibliography ? (
+													<Tooltip>
+														<TooltipTrigger asChild>
+															<Button
+																type="button"
+																variant="ghost"
+																size="icon-xs"
+																disabled={
+																	actionsDisabled || Boolean(importBusy)
+																}
+																aria-label={t("papersLibrary.import")}
+																onClick={() => {
+																	void onImportBibliography();
+																}}
+															>
+																{importBusy ? (
+																	<Loader2 className="size-3.5 animate-spin" />
+																) : (
+																	<Upload className="size-3.5" />
+																)}
+															</Button>
+														</TooltipTrigger>
+														<TooltipContent side="bottom">
+															{t("papersLibrary.import")}
+														</TooltipContent>
+													</Tooltip>
+												) : null}
+												{onMigrateZotero ? (
+													<Tooltip>
+														<TooltipTrigger asChild>
+															<Button
+																type="button"
+																variant="ghost"
+																size="icon-xs"
+																disabled={actionsDisabled}
+																aria-label={t("zoteroMigrate.button")}
+																onClick={() => {
+																	setWandOpen(false);
+																	onMigrateZotero();
+																}}
+															>
+																<SiZotero className="size-3.5 text-[#CC2936]" />
+															</Button>
+														</TooltipTrigger>
+														<TooltipContent side="bottom">
+															{t("zoteroMigrate.button")}
+														</TooltipContent>
+													</Tooltip>
+												) : null}
+												{onSyncZotero ? (
+													<Tooltip>
+														<TooltipTrigger asChild>
+															<Button
+																type="button"
+																variant="ghost"
+																size="icon-xs"
+																disabled={actionsDisabled}
+																aria-label={t("zoteroSync.button")}
+																onClick={() => {
+																	setWandOpen(false);
+																	onSyncZotero();
+																}}
+															>
+																<RefreshCw className="size-3.5" />
+															</Button>
+														</TooltipTrigger>
+														<TooltipContent side="bottom">
+															{t("zoteroSync.button")}
+														</TooltipContent>
+													</Tooltip>
+												) : null}
+											</div>
+											<Button
+												type="submit"
+												size="sm"
+												className="h-7 px-2.5 text-xs"
+												disabled={lookupBusy || !lookupText.trim()}
+											>
+												{lookupBusy ? t("lookup.adding") : t("lookup.add")}
+											</Button>
 										</div>
-										<Button
-											type="submit"
-											size="sm"
-											className="h-7 px-2.5 text-xs"
-											disabled={lookupBusy || !lookupText.trim()}
-										>
-											{lookupBusy ? t("lookup.adding") : t("lookup.add")}
-										</Button>
-									</div>
-								</form>
-							</PopoverContent>
-						</Popover>
+									</form>
+								</PopoverContent>
+							</Popover>
+						</div>
 					}
 				>
 					<DropdownMenu

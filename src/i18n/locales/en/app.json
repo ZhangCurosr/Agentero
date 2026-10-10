@@ -2,6 +2,7 @@
 	"labels": {
 		"agent": "Agent",
 		"notes": "Notes",
+		"graph": "Graph view",
 		"untitled": "Untitled",
 		"remoteArxiv": "Remote arXiv"
 	},
@@ -50,7 +51,8 @@
 		"tabNext": "Next Tab",
 		"tabPrev": "Previous Tab",
 		"exportAnnotatedPdf": "Export Annotated PDF",
-		"wandOpen": "Magic Wand (Import by ID)"
+		"wandOpen": "Magic Wand (Import by ID)",
+		"graphOpen": "Open Graph View"
 	},
 	"titlebar": {
 		"showLeftSidebar": "Show left sidebar",

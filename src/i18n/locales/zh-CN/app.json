@@ -2,6 +2,7 @@
 	"labels": {
 		"agent": "Agent",
 		"notes": "笔记",
+		"graph": "关系图谱",
 		"untitled": "未命名",
 		"remoteArxiv": "远程 arXiv"
 	},
@@ -50,7 +51,8 @@
 		"tabNext": "下一标签",
 		"tabPrev": "上一标签",
 		"exportAnnotatedPdf": "导出带批注的 PDF",
-		"wandOpen": "魔棒（按标识符入库）"
+		"wandOpen": "魔棒（按标识符入库）",
+		"graphOpen": "打开关系图谱"
 	},
 	"titlebar": {
 		"showLeftSidebar": "显示左侧边栏",

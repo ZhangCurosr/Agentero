@@ -27,6 +27,7 @@ import { getVaultPath } from "@/lib/vault/store";
 import {
 	closeTabOrWindow,
 	cycleActiveTab,
+	openGraph,
 	reopenClosedTab,
 	selectLibrary,
 	splitActivePane,
@@ -151,6 +152,22 @@ export const paletteCommands: AppCommand[] = [
 			selectLibrary();
 			void refreshLibrary();
 		},
+	},
+	{
+		id: "graph.open",
+		titleKey: "commands.graphOpen",
+		categoryKey: "commands.catView",
+		keywords: [
+			"graph",
+			"network",
+			"wikilink",
+			"relationship",
+			"relation",
+			"关系图谱",
+			"图谱",
+		],
+		when: hasVault,
+		run: () => openGraph(),
 	},
 	{
 		id: "tab.close",

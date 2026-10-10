@@ -61,6 +61,7 @@ import {
 import { isRemoteVaultHandle } from "@/lib/vault/remote/remote-vault";
 import { loadDirChildren } from "@/lib/vault/store";
 import {
+	openGraph,
 	openPaper,
 	openPaperNotes,
 	openPlazaSource,
@@ -83,6 +84,7 @@ const onOpenRemoteVaultClick = (args: {
 }) => void openRemoteVault(args);
 const onMigrateZotero = () => setZoteroOpen(true);
 const onSyncZotero = () => setZoteroSyncOpen(true);
+const onOpenGraph = () => openGraph();
 const onConfirmCreate = (name: string) => void confirmCreate(name);
 const onConfirmRename = (path: string, name: string) =>
 	void confirmRenamePath(path, name);
@@ -227,6 +229,7 @@ export function VaultSidebar() {
 					onOpenRemoteVault={onOpenRemoteVaultClick}
 					onMigrateZotero={onMigrateZotero}
 					onSyncZotero={onSyncZotero}
+					onOpenGraph={onOpenGraph}
 				/>
 			</div>
 			<div className="flex min-h-0 flex-1 flex-col pl-1">

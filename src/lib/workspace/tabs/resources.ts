@@ -39,6 +39,7 @@ import {
 } from "@/lib/vault";
 import { basenameOf, normalizePathKey, treeFindNode } from "@/lib/vault/path";
 import { readSeedCached } from "@/lib/vault/seed-cache";
+import { isGraphVirtualPath } from "@/lib/workspace/tabs/model";
 import {
 	type DocTab,
 	NOTES_PLACEHOLDER,
@@ -193,6 +194,21 @@ export async function loadTabResources(
 			paperMeta: null,
 			pdfUrl: null,
 			htmlUrl: plazaSourceForPath(path)?.url ?? null,
+			imageUrl: null,
+			notesPath: null,
+			notesSeed: "",
+			markdownSeed: "",
+			loaded: true,
+		};
+	}
+	if (isGraphVirtualPath(path)) {
+		return {
+			kind: "graph",
+			title: i18n.t("graph:title", "关系图谱"),
+			mode: "markdown",
+			paperMeta: null,
+			pdfUrl: null,
+			htmlUrl: null,
 			imageUrl: null,
 			notesPath: null,
 			notesSeed: "",

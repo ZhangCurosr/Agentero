@@ -12,11 +12,17 @@ import type { CenterViewMode } from "@/lib/workspace/viewer";
 export { basenameOf, normalizePathKey as normalizeTabPath };
 
 export const SPLIT_PANE_ID_MARKER = "::pane-";
+export const GRAPH_VIRTUAL_PATH = "agentero:graph";
+
+export function isGraphVirtualPath(path: string | null | undefined): boolean {
+	return path === GRAPH_VIRTUAL_PATH;
+}
 
 export function tabIdForPath(path: string): string {
 	if (isLibraryVirtualPath(path)) return LIBRARY_VIRTUAL_PATH;
 	if (isTrashVirtualPath(path)) return TRASH_VIRTUAL_PATH;
 	if (isPlazaVirtualPath(path)) return path;
+	if (isGraphVirtualPath(path)) return GRAPH_VIRTUAL_PATH;
 	return normalizePathKey(path);
 }
 
@@ -55,7 +61,12 @@ function remapTabIdForPath(
 
 /** Rewrite one absolute or Vault-relative path under a moved root. */
 export function remapPathUnder(path: string, from: string, to: string): string {
-	if (isLibraryVirtualPath(path) || isTrashVirtualPath(path)) return path;
+	if (
+		isLibraryVirtualPath(path) ||
+		isTrashVirtualPath(path) ||
+		isGraphVirtualPath(path)
+	)
+		return path;
 	if (isPlazaVirtualPath(path)) return path;
 	const current = path.replace(/\\/g, "/").replace(/\/+$/, "");
 	const oldRoot = from.replace(/\\/g, "/").replace(/\/+$/, "");
@@ -123,27 +134,34 @@ export function createPlaceholderTab(
 	const isLibrary = isLibraryVirtualPath(path);
 	const isTrash = isTrashVirtualPath(path);
 	const isPlaza = isPlazaVirtualPath(path);
+	const isGraph = isGraphVirtualPath(path);
 	return {
 		id,
 		path: isLibrary
 			? LIBRARY_VIRTUAL_PATH
 			: isTrash
 				? TRASH_VIRTUAL_PATH
-				: path,
+				: isGraph
+					? GRAPH_VIRTUAL_PATH
+					: path,
 		kind: isLibrary
 			? "library"
 			: isTrash
 				? "trash"
 				: isPlaza
 					? "plaza"
-					: "file",
+					: isGraph
+						? "graph"
+						: "file",
 		title: isLibrary
 			? "Library"
 			: isTrash
 				? "Recycle Bin"
 				: isPlaza
 					? plazaTitleForPath(path)
-					: basenameOf(path),
+					: isGraph
+						? "关系图谱"
+						: basenameOf(path),
 		mode: preferMode,
 		paperMeta: null,
 		pdfUrl: null,
@@ -277,7 +295,11 @@ export function removeTabsUnderPath(
 	const survivors: DocTab[] = [];
 	const removed: DocTab[] = [];
 	for (const t of prev) {
-		if (isLibraryVirtualPath(t.path) || isPlazaVirtualPath(t.path)) {
+		if (
+			isLibraryVirtualPath(t.path) ||
+			isPlazaVirtualPath(t.path) ||
+			isGraphVirtualPath(t.path)
+		) {
 			survivors.push(t);
 			continue;
 		}

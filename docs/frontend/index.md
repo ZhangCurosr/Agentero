@@ -45,7 +45,7 @@ React 19 + TypeScript Webview UI。全局状态为按域 **zustand vanilla store
 |---|---|
 | Markdown | Plate + `@platejs/markdown` + media + selection/dnd |
 | PDF | EmbedPDF + PDFium |
-| 图谱 | react-force-graph-2d |
+| 图谱 | 原生 Canvas 2D + Barnes-Hut 物理仿真 |
 | 状态 | zustand vanilla（按域 store） |
 
 ## Chat 分层（强制）

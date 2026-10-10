@@ -124,6 +124,7 @@ import {
 	createTranslationSplitPane,
 	type DocTab,
 	ensureFullLibraryTab,
+	GRAPH_VIRTUAL_PATH,
 	insertPlaceholderTab,
 	isPaperContentTab,
 	loadTabResources,
@@ -1887,6 +1888,11 @@ export function selectLibrary(): void {
 export function selectTrash(): void {
 	setTreeSelectedPath(TRASH_VIRTUAL_PATH);
 	openTab(TRASH_VIRTUAL_PATH);
+}
+
+export function openGraph(): void {
+	setTreeSelectedPath(GRAPH_VIRTUAL_PATH);
+	openTab(GRAPH_VIRTUAL_PATH);
 }
 
 /** Open one Plaza source panel (from its tree child row). */

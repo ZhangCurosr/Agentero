@@ -44,6 +44,11 @@ const TextEditor = lazy(() =>
 		default: m.TextEditor,
 	})),
 );
+const GraphView = lazy(() =>
+	import("@/components/graph").then((m) => ({
+		default: m.GraphView,
+	})),
+);
 
 /** Library-tab-only props (ignored by PDF / editor / trash). */
 export type DocViewLibraryProps = {
@@ -212,6 +217,7 @@ function docViewPropsEqual(prev: DocViewProps, next: DocViewProps): boolean {
 		);
 	}
 	if (tab.kind === "plaza") return true;
+	if (tab.kind === "graph") return true;
 	if (tab.mode === "markdown") return prev.editor === next.editor;
 	if (tab.mode === "excalidraw") return prev.excalidraw === next.excalidraw;
 	if (tab.mode === "text") return prev.text === next.text;
@@ -296,6 +302,13 @@ export const DocView = memo(function DocView({
 		return (
 			<Suspense fallback={<TabLoadingSkeleton />}>
 				<PlazaView path={tab.path} className="bg-background" />
+			</Suspense>
+		);
+	}
+	if (tab.kind === "graph") {
+		return (
+			<Suspense fallback={<TabLoadingSkeleton />}>
+				<GraphView vaultPath={vaultPath} active={active} />
 			</Suspense>
 		);
 	}
